@@ -1,6 +1,8 @@
 {
   "name": "context-meter",
-  "owner": { "name": "Justin Chai" },
+  "owner": {
+    "name": "justerification"
+  },
   "plugins": [
     {
       "name": "context-meter",

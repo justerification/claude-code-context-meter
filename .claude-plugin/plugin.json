@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "A band above the prompt: context window fill, plan usage limits and session cost, a Recap button, and a per-day cost record read with /spend.",
   "author": {
-    "name": "Justin Chai"
+    "name": "justerification"
   },
   "types": "./types/index.d.ts"
 }
