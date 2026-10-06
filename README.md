@@ -65,6 +65,10 @@ Everything is in `hooks/register.tsx`. The colours are in `HUES`, the thresholds
 claude plugin validate .
 ```
 
+## Not affiliated
+
+This is an independent project. It is not affiliated with or endorsed by Anthropic; Claude and Claude Code are named only to say what the mod works with.
+
 ## Licence
 
 MIT.
