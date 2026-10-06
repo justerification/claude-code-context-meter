@@ -6,6 +6,8 @@ A Claude Code mod that puts your usage above the prompt box, so you stop opening
 
 *A drawing of the band with sample values, made from the mod's own drawing code.*
 
+A 19-second walkthrough is in [`docs/demo.mp4`](docs/demo.mp4). It is an animated mock of the desktop app, drawn in `video/demo.html` and rendered by `video/render.mjs`, not a screen recording.
+
 ## What it shows
 
 One row above the prompt:

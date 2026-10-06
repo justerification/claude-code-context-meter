@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>context-meter demo</title>
+<style>
+  html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: #e9e6df; }
+  body { font: 15px/1.45 -apple-system, "SF Pro Text", "Helvetica Neue", sans-serif; color: #1f1e1c; -webkit-font-smoothing: antialiased; }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  #world { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; will-change: transform; }
+  #app { position: absolute; left: 160px; top: 90px; width: 1600px; height: 900px; border-radius: 14px; background: #faf9f6; box-shadow: 0 30px 80px rgba(40, 30, 10, .18), 0 0 0 1px rgba(0, 0, 0, .08); overflow: hidden; }
+  #side { position: absolute; left: 0; top: 0; bottom: 0; width: 280px; background: #f1efe9; border-right: 1px solid #e3e0d8; }
+  .lights { position: absolute; left: 18px; top: 18px; display: flex; gap: 8px; }
+  .lights i { width: 12px; height: 12px; border-radius: 50%; background: #d8d4ca; }
+  .tabs { position: absolute; left: 18px; top: 56px; display: flex; gap: 4px; font-size: 13px; font-weight: 500; color: #77736a; }
+  .tabs span { padding: 5px 12px; border-radius: 8px; }
+  .tabs .on { background: #fff; color: #1f1e1c; box-shadow: 0 0 0 1px #e3e0d8; }
+  .new { position: absolute; left: 18px; right: 18px; top: 104px; padding: 9px 12px; border-radius: 10px; background: #fff; box-shadow: 0 0 0 1px #e3e0d8; font-size: 13.5px; font-weight: 500; }
+  .list { position: absolute; left: 10px; right: 10px; top: 164px; font-size: 13.5px; color: #55524b; }
+  .list small { display: block; padding: 0 10px 6px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: #9a968c; }
+  .list div { padding: 8px 10px; border-radius: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .list .on { background: #e6e3da; color: #1f1e1c; font-weight: 500; }
+  #head { position: absolute; left: 280px; right: 0; top: 0; height: 52px; border-bottom: 1px solid #ebe8e0; display: flex; align-items: center; padding: 0 24px; font-size: 14px; font-weight: 600; }
+  #head span { margin-left: 10px; font-weight: 400; color: #9a968c; }
+  /* Everything below is placed in world coordinates so the camera maths stays simple. */
+  #thread { position: absolute; left: 670px; width: 860px; }
+  .me { margin: 0 0 18px auto; width: fit-content; max-width: 560px; padding: 10px 16px; border-radius: 16px; background: #ebe8df; }
+  .it { margin: 0 0 18px; color: #3a3833; }
+  .it code { font: 13px ui-monospace, Menlo, monospace; background: #f0ede5; padding: 1px 5px; border-radius: 4px; }
+  .tool { margin: 0 0 12px; font-size: 13px; color: #8a867c; }
+  #band { position: absolute; left: 670px; width: 860px; bottom: 218px; border-radius: 12px; background: #eeece6; transform-origin: 50% 100%; overflow: hidden; }
+  #row { position: relative; height: 24px; margin: 8px 10px; }
+  #row > * { position: absolute; top: 0; transform-origin: 50% 50%; }
+  #btn { height: 24px; padding: 0 11px; border-radius: 7px; background: #fff; box-shadow: 0 0 0 1px #d6d2c8, 0 1px 1px rgba(0, 0, 0, .04); font-size: 12.5px; font-weight: 500; line-height: 24px; white-space: nowrap; }
+  #recap { overflow: hidden; padding: 0 10px; }
+  .rline { display: flex; align-items: center; gap: 10px; height: 24px; margin-bottom: 8px; font-size: 13.5px; }
+  .rline svg { flex: none; transform-origin: 20% 50%; }
+  #box { position: absolute; left: 670px; top: 870px; width: 860px; height: 60px; border-radius: 16px; background: #fff; box-shadow: 0 0 0 1px #dedad0, 0 6px 20px rgba(40, 30, 10, .07); display: flex; align-items: center; padding: 0 20px; box-sizing: border-box; font-size: 16px; }
+  #box .ph { color: #a5a196; }
+  #caret { display: inline-block; width: 1.5px; height: 20px; background: #1f1e1c; margin-left: 1px; vertical-align: -4px; }
+  #send { margin-left: auto; width: 30px; height: 30px; border-radius: 9px; background: #d97757; display: grid; place-items: center; transform-origin: 50% 50%; }
+  #tools { position: absolute; left: 690px; top: 942px; width: 820px; display: flex; justify-content: space-between; font-size: 13px; color: #8a867c; }
+  #ptr { position: absolute; left: 0; top: 0; width: 26px; height: 26px; transform-origin: 0 0; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, .3)); }
+  #ring { position: absolute; width: 40px; height: 40px; margin: -20px 0 0 -20px; border-radius: 50%; border: 2px solid #d97757; }
+  #end { position: absolute; inset: 0; background: #f3f1ea; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; }
+  #end h1 { margin: 0; font: 600 76px/1 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: -.03em; }
+  #end p { margin: 0; font-size: 26px; color: #6b675e; }
+  #end .url { font: 20px ui-monospace, Menlo, monospace; color: #9a968c; }
+  #endpills { transform: scale(1.6); margin: 26px 0 30px; }
+</style>
+</head>
+<body>
+<div id="world">
+  <div id="app">
+    <div id="side">
+      <div class="lights"><i></i><i></i><i></i></div>
+      <div class="tabs"><span>Chat</span><span>Cowork</span><span class="on">Code</span></div>
+      <div class="new">+ New session</div>
+      <div class="list"><small>Today</small><div class="on">Billing export rename</div><div>Fix the login redirect</div><div>Release notes draft</div><small style="margin-top:14px">Yesterday</small><div>Flaky test hunt</div><div>Onboarding copy pass</div><div>Upgrade the linter</div></div>
+    </div>
+    <div id="head">Billing export rename <span>~/work/billing</span></div>
+  </div>
+  <div id="thread">
+    <div class="me">Rename the export job to billing_export and update its tests.</div>
+    <div class="tool">Edited 6 files · Ran 42 tests</div>
+    <div class="it">Renamed <code>export_job</code> to <code>billing_export</code> across six files and updated the fixtures. All 42 tests pass. The old name is still accepted as an alias for one release.</div>
+    <div class="me" id="asked">how much context do I have left?</div>
+    <div class="it" id="answer">It's right under this message now.</div>
+  </div>
+  <div id="band"><div id="row"></div><div id="recap"></div></div>
+  <div id="box"><span id="typed"></span><span id="caret"></span><span class="ph" id="ph">Type / for commands</span>
+    <div id="send"><svg width="14" height="14" viewBox="0 0 14 14"><path d="M7 12V2M3 6l4-4 4 4" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div></div>
+  <div id="tools"><span>+ &nbsp; Auto</span><span>Opus 5.5 &nbsp; Medium</span></div>
+  <div id="ring"></div>
+  <svg id="ptr" viewBox="0 0 26 26"><path d="M3 2l17 9.5-7.4 1.9L9.4 21z" fill="#1f1e1c" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>
+</div>
+<div id="end"><h1>context-meter</h1><p>A Claude Code mod. Context, limits and cost, above the prompt.</p><div id="endpills"></div><div class="url">github.com/justerification/claude-code-context-meter</div></div>
+<script>
+// The pill and chip drawing is the mod's own, lifted from hooks/register.tsx.
+const CHAR = 7.25, BAR = 48, PILL_H = 24;
+const HUES = { green: '#2e8b4d', blue: '#2f6fd0', purple: '#7a54c7', grey: '#7b7f87', yellow: '#9a7300', orange: '#c2571a' };
+const ICONS = {
+  gauge: '<path d="M3 11.5a5 5 0 1 1 10 0"/><path d="M8 11.5l2.4-3.6"/>',
+  clock: '<circle cx="8" cy="8" r="5.5"/><path d="M8 5v3.2l2 1.3"/>',
+  calendar: '<rect x="2.5" y="3.5" width="11" height="10" rx="2"/><path d="M2.5 7h11M5.5 2v3M10.5 2v3"/>',
+  coin: '<circle cx="8" cy="8" r="5.5"/><path d="M9.7 6.4c-.5-.7-3.2-.9-3.2.5 0 1.5 3.2.8 3.2 2.3 0 1.3-2.8 1.3-3.4.5M8 4.6v6.8"/>',
+};
+const FONT = 'font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12"';
+function drawPill(pill) {
+  const hue = HUES[pill.hue];
+  let inner = '', cx = 12;
+  const text = (s, fill, weight = 400, opacity = 1) => { inner += `<text x="${cx}" y="16.5" fill="${fill}" fill-opacity="${opacity}" font-weight="${weight}">${s}</text>`; cx += s.length * CHAR + 8; };
+  inner += `<g transform="translate(${cx} 4)" fill="none" stroke="${hue}" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">${ICONS[pill.icon]}</g>`;
+  cx += 22;
+  if (pill.name) text(pill.name, hue, 600);
+  if (pill.percent !== undefined) {
+    if (pill.hasBar !== false) {
+      inner += `<rect x="${cx}" y="9.5" width="${BAR}" height="5" rx="2.5" fill="${hue}" fill-opacity="0.22"/><rect x="${cx}" y="9.5" width="${Math.max(3, pill.percent / 100 * BAR)}" height="5" rx="2.5" fill="${hue}"/>`;
+      cx += BAR + 8;
+    }
+    text(`${String(Math.round(pill.percent)).padStart(pill.pad || 1, ' ')}%`, hue, 700);
+  }
+  if (pill.detail !== undefined) {
+    if (pill.percent !== undefined) { inner += `<rect x="${cx}" y="6" width="1" height="12" fill="${hue}" fill-opacity="0.35"/>`; cx += 9; text(pill.detail, hue, 400, 0.8); }
+    else text(pill.detail, hue, 700);
+  }
+  const width = cx - 8 + 12;
+  return { width, svg: `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${PILL_H}" viewBox="0 0 ${width} ${PILL_H}" ${FONT} xml:space="preserve"><rect width="${width}" height="${PILL_H}" rx="12" fill="${hue}" fill-opacity="0.13"/>${inner}</svg>` };
+}
+const PARTS = [
+  { name: 'Now', hue: 'blue', icon: '<circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="1.4"/>', text: 'The export job is renamed and all 42 tests pass.' },
+  { name: 'Waiting on you', hue: 'orange', icon: '<path d="M4.5 2.5h7M4.5 13.5h7M5.2 2.5c0 3.2 5.6 3.4 5.6 5.5s-5.6 2.3-5.6 5.5M10.8 2.5c0 3.2-5.6 3.4-5.6 5.5s5.6 2.3 5.6 5.5"/>', text: 'Decide how long the old name stays as an alias.' },
+  { name: 'Next', hue: 'green', icon: '<path d="M3 8h9.5M9 4.5L12.5 8 9 11.5"/>', text: 'Open the pull request once that is settled.' },
+];
+const drawChip = p => `<svg xmlns="http://www.w3.org/2000/svg" width="150" height="24" viewBox="0 0 150 24" ${FONT}><rect width="150" height="24" rx="12" fill="${HUES[p.hue]}" fill-opacity="0.13"/><g transform="translate(12 4)" fill="none" stroke="${HUES[p.hue]}" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">${p.icon}</g><text x="34" y="16.5" fill="${HUES[p.hue]}" font-weight="700">${p.name}</text></svg>`;
+
+// Timeline helpers: everything is a pure function of t, so any frame can be drawn on its own.
+const cl = x => Math.max(0, Math.min(1, x));
+const seg = (t, a, b) => cl((t - a) / (b - a));
+const eo = x => 1 - Math.pow(1 - x, 3);
+const eio = x => x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+const back = x => { const c = 2.4; return 1 + (c + 1) * Math.pow(x - 1, 3) + c * Math.pow(x - 1, 2); };
+const lerp = (a, b, p) => a + (b - a) * p;
+const $ = id => document.getElementById(id);
+
+const TOTAL = 19;
+const T = { zoom: [1.6, 3.2], type: [3.5, 5.5], send: 5.8, answer: 6.4, band: 6.9, pills: [7.2, 7.5, 7.8, 8.1], btn: 8.45, ptr: [8.9, 10.2], click: 10.4, ask: [10.4, 11.5], recap: 11.5, lines: [11.8, 12.6, 13.4], end: [16.2, 16.9] };
+const CAMERA = [[0, 960, 540, 1], [1.6, 960, 540, 1], [3.2, 1100, 720, 2], [10.9, 1100, 720, 2], [12.2, 1100, 700, 2], [15.2, 1100, 700, 2], [16.4, 1100, 680, 1.7]];
+const PROMPT = 'how much context do I have left?';
+
+const pills = [
+  { name: 'Context', icon: 'gauge', hue: 'green', percent: 31, pad: 2, detail: '312k / 1M' },
+  { name: '5h', icon: 'clock', hue: 'blue', percent: 12, pad: 2, detail: '3h 40m', hasBar: false },
+  { name: '7d', icon: 'calendar', hue: 'purple', percent: 54, pad: 2, detail: '1d 2h', hasBar: false },
+  { name: '', icon: 'coin', hue: 'yellow', detail: '$8.93' },
+];
+const row = $('row');
+let x = 0;
+const slots = pills.map(p => { const el = document.createElement('div'); const { width } = drawPill(p); el.style.left = x + 'px'; el.style.width = width + 'px'; el.style.height = '24px'; row.appendChild(el); x += width + 8; return el; });
+const btn = document.createElement('div'); btn.id = 'btn'; btn.style.left = x + 'px'; row.appendChild(btn);
+const BTN = { x: 670 + 10 + x + 28, y: 0 };
+$('recap').innerHTML = PARTS.map((p, i) => `<div class="rline" id="r${i}">${drawChip(p)}<span style="color:${HUES[p.hue]}">${p.text}</span></div>`).join('');
+$('endpills').innerHTML = pills.map(p => drawPill(p).svg).join('<span style="display:inline-block;width:8px"></span>');
+
+function seek(t) {
+  // Camera
+  let k = 0; while (k < CAMERA.length - 2 && t >= CAMERA[k + 1][0]) k++;
+  const [t0, x0, y0, s0] = CAMERA[k], [t1, x1, y1, s1] = CAMERA[k + 1];
+  const p = eio(seg(t, t0, t1)), cx = lerp(x0, x1, p), cy = lerp(y0, y1, p), s = lerp(s0, s1, p);
+  $('world').style.transform = `translate(${960 - cx * s}px, ${540 - cy * s}px) scale(${s})`;
+  $('world').style.opacity = eo(seg(t, 0, .5));
+
+  // Typing, then sending
+  const sent = t >= T.send;
+  const n = sent ? 0 : Math.floor(seg(t, ...T.type) * PROMPT.length);
+  $('typed').textContent = PROMPT.slice(0, n);
+  $('ph').style.display = n === 0 ? '' : 'none';
+  $('caret').style.opacity = t > 3.2 && (n > 0 && n < PROMPT.length || Math.floor(t * 2) % 2 === 0) ? 1 : 0;
+  const press = seg(t, T.send - .12, T.send) - seg(t, T.send, T.send + .2);
+  $('send').style.transform = `scale(${1 - .14 * press})`;
+  $('send').style.opacity = n > 0 || press > 0 ? 1 : .35;
+
+  // The band and its height, which pushes the thread up
+  const bandIn = back(seg(t, T.band, T.band + .45));
+  // The band grows a line at a time, each just ahead of the line that fills it.
+  const recapH = T.lines.reduce((h, at) => h + eo(seg(t, at - .3, at + .1)) * 32, 0) + eo(seg(t, T.lines[0] - .3, T.lines[0] + .1)) * 8;
+  const bandH = seg(t, T.band, T.band + .01) ? 40 + recapH : 0;
+  $('band').style.opacity = seg(t, T.band, T.band + .15);
+  $('band').style.transform = `translateY(${(1 - bandIn) * 14}px) scale(${lerp(.96, 1, bandIn)})`;
+  $('recap').style.height = recapH + 'px';
+  slots.forEach((el, i) => {
+    const q = seg(t, T.pills[i], T.pills[i] + .5);
+    const count = eo(seg(t, T.pills[i] + .1, T.pills[i] + 1.1));
+    const live = { ...pills[i] };
+    if (live.percent !== undefined) live.percent = pills[i].percent * count;
+    if (i === 0) live.detail = `${String(Math.round(312 * count)).padStart(3, ' ')}k / 1M`;
+    if (i === 3) live.detail = `$${(8.93 * count).toFixed(2)}`;
+    el.innerHTML = drawPill(live).svg;
+    el.style.opacity = cl(q * 3);
+    el.style.transform = `scale(${lerp(.6, 1, back(q))})`;
+  });
+  const b = seg(t, T.btn, T.btn + .4), click = seg(t, T.click - .1, T.click) - seg(t, T.click, T.click + .22);
+  btn.style.opacity = cl(b * 3);
+  btn.style.transform = `scale(${lerp(.6, 1, back(b)) * (1 - .1 * click)})`;
+  btn.textContent = t < T.ask[0] ? 'Recap' : t < T.ask[1] ? 'Asking' + '.'.repeat(1 + Math.floor((t - T.ask[0]) * 4) % 3) : 'Hide';
+  btn.style.background = click > 0 ? '#f1efe9' : '#fff';
+  PARTS.forEach((_, i) => {
+    const line = $('r' + i), q = seg(t, T.lines[i], T.lines[i] + .35), w = seg(t, T.lines[i] + .15, T.lines[i] + .75);
+    line.style.opacity = cl(q * 4);
+    line.firstChild.style.transform = `scale(${lerp(.7, 1, back(q))})`;
+    line.lastChild.style.clipPath = `inset(0 ${(1 - w) * 100}% 0 0)`;
+  });
+
+  // Thread: sits above the band, the new exchange arriving after the send
+  const ask = back(seg(t, T.send, T.send + .4)), ans = eo(seg(t, T.answer, T.answer + .4));
+  $('asked').style.display = sent ? '' : 'none';
+  $('asked').style.opacity = cl(ask * 2); $('asked').style.transform = `translateY(${(1 - ask) * 16}px)`;
+  $('answer').style.display = t >= T.answer ? '' : 'none';
+  $('answer').style.opacity = ans; $('answer').style.transform = `translateY(${(1 - ans) * 10}px)`;
+  const lift = eo(seg(t, T.band, T.band + .4)) * 50 + recapH;
+  $('thread').style.top = (858 - lift - $('thread').offsetHeight) + 'px';
+
+  // Pointer and click
+  const m = eio(seg(t, ...T.ptr)), px = lerp(1420, BTN.x, m), py = lerp(960, 862 - 8 - 12 - recapH, m) + Math.sin(m * Math.PI) * -18;
+  $('ptr').style.opacity = seg(t, T.ptr[0] - .2, T.ptr[0]) - seg(t, T.recap + .3, T.recap + .7);
+  $('ptr').style.transform = `translate(${px}px, ${py}px) scale(${1 - .12 * click})`;
+  const r = seg(t, T.click, T.click + .45);
+  $('ring').style.left = BTN.x + 'px'; $('ring').style.top = (862 - 20 - recapH) + 'px';
+  $('ring').style.opacity = r > 0 && r < 1 ? 1 - r : 0; $('ring').style.transform = `scale(${lerp(.4, 1.5, eo(r))})`;
+
+  // End card
+  const e = eo(seg(t, ...T.end));
+  $('end').style.opacity = e; $('end').style.transform = `scale(${lerp(1.03, 1, e)})`;
+}
+window.DURATION = TOTAL;
+window.seek = seek;
+window.videoReady = document.fonts.ready.then(() => { seek(0); return true; });
+if (!location.search.includes('render')) { const t0 = performance.now(); (function loop() { seek(((performance.now() - t0) / 1000) % TOTAL); requestAnimationFrame(loop); })(); }
+</script>
+</body>
+</html>
