@@ -28,6 +28,22 @@
   .it { margin: 0 0 18px; color: #3a3833; }
   .it code { font: 13px ui-monospace, Menlo, monospace; background: #f0ede5; padding: 1px 5px; border-radius: 4px; }
   .tool { margin: 0 0 12px; font-size: 13px; color: #8a867c; }
+  .shots { display: flex; gap: 14px; margin: 0 0 14px; }
+  .shot { flex: 1; border-radius: 12px; background: #fff; box-shadow: 0 0 0 1px #e3e0d8; padding: 12px 14px 14px; }
+  .shot > b { display: block; font: 600 10.5px/1 ui-monospace, Menlo, monospace; letter-spacing: .08em; text-transform: uppercase; color: #9a968c; }
+  .plans { display: flex; gap: 8px; margin-top: 14px; align-items: flex-end; }
+  .plan { flex: 1; border-radius: 9px; box-shadow: 0 0 0 1px #e6e3da; padding: 10px; font-size: 10.5px; color: #77736a; background: #fff; }
+  .plan em { display: block; font: 600 17px/1.2 -apple-system, sans-serif; color: #1f1e1c; margin: 3px 0 8px; }
+  .plan i { display: block; height: 4px; border-radius: 2px; background: #ebe8e0; margin-bottom: 5px; }
+  .plan i:nth-of-type(2) { width: 70%; }
+  .plan u { display: block; height: 18px; border-radius: 6px; background: #f0ede5; margin-top: 9px; }
+  .plan.hot { background: #1f1e1c; color: #b9b5aa; box-shadow: 0 8px 18px rgba(31, 30, 28, .22); padding-bottom: 16px; position: relative; }
+  .plan.hot em { color: #fff; }
+  .plan.hot i { background: #47443e; }
+  .plan.hot u { background: #5b6cf0; }
+  .plan.hot s { position: absolute; right: 8px; top: 8px; text-decoration: none; font: 600 9px/1 -apple-system, sans-serif; color: #fff; background: #5b6cf0; padding: 3px 6px; border-radius: 20px; }
+  .used { margin: 0 0 18px; font-size: 13px; color: #8a867c; }
+  .used code { font: 12px ui-monospace, Menlo, monospace; background: #f0ede5; color: #55524b; padding: 2px 7px; border-radius: 5px; margin-left: 4px; }
   #band { position: absolute; left: 670px; width: 860px; bottom: 218px; border-radius: 12px; background: #eeece6; transform-origin: 50% 100%; overflow: hidden; }
   #row { position: relative; height: 24px; margin: 8px 10px; }
   #row > * { position: absolute; top: 0; transform-origin: 50% 50%; }
@@ -56,14 +72,19 @@
       <div class="lights"><i></i><i></i><i></i></div>
       <div class="tabs"><span>Chat</span><span>Cowork</span><span class="on">Code</span></div>
       <div class="new">+ New session</div>
-      <div class="list"><small>Today</small><div class="on">Billing export rename</div><div>Fix the login redirect</div><div>Release notes draft</div><small style="margin-top:14px">Yesterday</small><div>Flaky test hunt</div><div>Onboarding copy pass</div><div>Upgrade the linter</div></div>
+      <div class="list"><small>Today</small><div class="on">Pricing card redesign</div><div>Empty states pass</div><div>Dark mode tokens</div><small style="margin-top:14px">Yesterday</small><div>Nav bar spacing</div><div>Onboarding illustrations</div><div>Settings page tidy</div></div>
     </div>
-    <div id="head">Billing export rename <span>~/work/billing</span></div>
+    <div id="head">Pricing card redesign <span>~/work/storefront</span></div>
   </div>
   <div id="thread">
-    <div class="me">Rename the export job to billing_export and update its tests.</div>
-    <div class="tool">Edited 6 files · Ran 42 tests</div>
-    <div class="it">Renamed <code>export_job</code> to <code>billing_export</code> across six files and updated the fixtures. All 42 tests pass. The old name is still accepted as an alias for one release.</div>
+    <div class="me">Redesign the pricing card so the annual plan is the obvious choice.</div>
+    <div class="tool">Edited 3 files · Took 2 screenshots</div>
+    <div class="it">The annual plan now sits raised in the middle with the saving on it. Here is the card before and after.</div>
+    <div class="shots">
+      <div class="shot"><b>Before</b><div class="plans"><div class="plan">Monthly<em>$12</em><i></i><i></i><u></u></div><div class="plan">Annual<em>$115</em><i></i><i></i><u></u></div><div class="plan">Team<em>$40</em><i></i><i></i><u></u></div></div></div>
+      <div class="shot"><b>After</b><div class="plans"><div class="plan">Monthly<em>$12</em><i></i><i></i><u></u></div><div class="plan hot"><s>Save 20%</s>Annual<em>$9.60</em><i></i><i></i><u></u></div><div class="plan">Team<em>$40</em><i></i><i></i><u></u></div></div></div>
+    </div>
+    <div class="used">Components used <code>PlanCard</code><code>Badge</code><code>PriceToggle</code></div>
     <div class="me" id="asked">how much context do I have left?</div>
     <div class="it" id="answer">It's right under this message now.</div>
   </div>
@@ -108,9 +129,9 @@ function drawPill(pill) {
   return { width, svg: `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${PILL_H}" viewBox="0 0 ${width} ${PILL_H}" ${FONT} xml:space="preserve"><rect width="${width}" height="${PILL_H}" rx="12" fill="${hue}" fill-opacity="0.13"/>${inner}</svg>` };
 }
 const PARTS = [
-  { name: 'Now', hue: 'blue', icon: '<circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="1.4"/>', text: 'The export job is renamed and all 42 tests pass.' },
-  { name: 'Waiting on you', hue: 'orange', icon: '<path d="M4.5 2.5h7M4.5 13.5h7M5.2 2.5c0 3.2 5.6 3.4 5.6 5.5s-5.6 2.3-5.6 5.5M10.8 2.5c0 3.2-5.6 3.4-5.6 5.5s5.6 2.3 5.6 5.5"/>', text: 'Decide how long the old name stays as an alias.' },
-  { name: 'Next', hue: 'green', icon: '<path d="M3 8h9.5M9 4.5L12.5 8 9 11.5"/>', text: 'Open the pull request once that is settled.' },
+  { name: 'Now', hue: 'blue', icon: '<circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="1.4"/>', text: 'The pricing card is redesigned with the annual plan raised.' },
+  { name: 'Waiting on you', hue: 'orange', icon: '<path d="M4.5 2.5h7M4.5 13.5h7M5.2 2.5c0 3.2 5.6 3.4 5.6 5.5s-5.6 2.3-5.6 5.5M10.8 2.5c0 3.2-5.6 3.4-5.6 5.5s5.6 2.3 5.6 5.5"/>', text: 'Choose the badge wording: Save 20% or 2 months free.' },
+  { name: 'Next', hue: 'green', icon: '<path d="M3 8h9.5M9 4.5L12.5 8 9 11.5"/>', text: 'Carry the chosen card through to the checkout page.' },
 ];
 const drawChip = p => `<svg xmlns="http://www.w3.org/2000/svg" width="150" height="24" viewBox="0 0 150 24" ${FONT}><rect width="150" height="24" rx="12" fill="${HUES[p.hue]}" fill-opacity="0.13"/><g transform="translate(12 4)" fill="none" stroke="${HUES[p.hue]}" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">${p.icon}</g><text x="34" y="16.5" fill="${HUES[p.hue]}" font-weight="700">${p.name}</text></svg>`;
 
