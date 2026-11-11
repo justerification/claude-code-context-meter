@@ -2,20 +2,20 @@
 
 A Claude Code mod that puts your usage above the prompt box, so you stop opening the context popover to check it.
 
-![The band with sample values: four pills, a button, and a three-line recap](docs/preview.png)
+![The band as it was in version 1.0, with sample values: four pills, a button, and a three-line recap](docs/preview.png)
 
-*A drawing of the band with sample values, made from the mod's own drawing code.*
+*A drawing of the band as it was in version 1.0, made from the mod's own drawing code. Version 1.1 has no Recap button, and its plan pills follow your plan (see below).*
 
-A 19-second walkthrough is in [`docs/demo.mp4`](docs/demo.mp4). It is an animated mock of the desktop app, drawn in `video/demo.html` and rendered by `video/render.mjs`, not a screen recording.
+A 19-second walkthrough of version 1.0 is in [`docs/demo.mp4`](docs/demo.mp4). It is an animated mock of the desktop app, drawn in `video/demo.html` and rendered by `video/render.mjs`, not a screen recording.
 
 ## What it shows
 
 One row above the prompt:
 
 - **Context**: how full the context window is, as a bar, a percentage and tokens over the window.
-- **5h** and **7d**: your plan's five-hour and seven-day limits, as a percentage and the time until each resets.
+- **5h** and **All**: your plan's five-hour and weekly all-models limits, as a percentage and the time until each resets. A pill shows only if your plan has that window.
+- **A pill per model with its own weekly limit**, named as your plan names it (for example **Fable**), in the same form.
 - **Cost**: what the session has cost so far at API list prices. On a subscription this is not a charge.
-- **Recap**: a button. Press it and the mod asks the model three things about the current session: where the work stands, what is waiting on you, and what comes next. The answer appears under the row and clears when you send your next message.
 
 A percentage turns amber at 60% and red at 85%.
 
@@ -47,19 +47,27 @@ The second line makes the desktop app reload the mod when you edit its files. Bo
 
 ## What it costs to run
 
-The pills cost nothing: they read figures Claude Code already has. Each press of **Recap** is one extra model call over the session's transcript, mostly served from the prompt cache. Nothing is spent until you press it.
+No tokens: the mod makes no model calls.
+
+It does start a second process. Claude Code hands mods only the five-hour and seven-day figures, so for the per-model weekly limits the mod runs a second `claude` after a turn, at most once every three minutes, and asks it for the plan's usage report:
+
+```
+claude -p --input-format stream-json --output-format stream-json --verbose --no-session-persistence --settings '{"disableAllHooks":true,"env":{"CLAUDE_CODE_PLUGIN_DIRS":"","CLAUDE_CODE_PLUGIN_DIR_WATCH":"0"}}'
+```
+
+with one `get_usage` control request on its standard input. That process sends no prompt, runs none of your hooks, loads no mods, saves no session and exits in about a second. It reads your plan usage with the sign-in Claude Code already has; the mod never sees a credential. To switch this off, delete the two `refreshPlanQuietly($)` lines in `hooks/register.tsx`.
 
 ## Limits
 
-- Claude Code reports only the five-hour and seven-day windows to mods. A per-model weekly limit and cloud session credits cannot be shown.
-- The desktop app draws mod buttons itself, so the Recap button cannot be styled to match the pills.
+- The `get_usage` request is marked experimental in Claude Code. If the per-model pills vanish after an update, that is the first thing to check.
+- Cloud session credits cannot be shown.
 - The daily cost record covers Claude Code sessions on one machine. It is kept in `~/.claude/mods-data/context-meter/cost/`, one small file per session per day.
 - The pills are drawn as one SVG in the desktop app. The terminal gets a plain text row.
-- The mods API is early access and changes between releases. This was built and used on 2.1.286 in the desktop app, on macOS.
+- The mods API is early access and changes between releases. Version 1.1 was built and used on 2.1.317 in the desktop app, on macOS.
 
 ## Changing it
 
-Everything is in `hooks/register.tsx`. The colours are in `HUES`, the thresholds in `tone`, the pills in `pillsOf`, and the Recap question in `WHERE_PROMPT`. Check an edit with:
+Everything is in `hooks/register.tsx`. The colours are in `HUES`, the thresholds in `tone`, the pills in `pillsOf`, and the usage report in `refreshPlan`. Check an edit with:
 
 ```bash
 claude plugin validate .

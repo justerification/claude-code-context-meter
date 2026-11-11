@@ -1,28 +1,114 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Limit, Reading, Where } from '../types'
+import type { Limit, Plan, Reading } from '../types'
 
 const reading = atom({ plugin: 'context-meter', key: 'reading' } as const, null)
 
-// Asked only when the button is pressed: each ask is a model call over the session's transcript.
-const IDLE: Where = { status: 'idle', lines: [] }
-const where = atom({ plugin: 'context-meter', key: 'where' } as const, IDLE)
-const WHERE_PROMPT = [
-  'Do not continue the work. Answer in exactly three short lines of plain text, no markdown, each under 110 characters:',
-  'Now: where the work in this session stands',
-  'Waiting on you: what needs the user to decide, check or do, or "nothing"',
-  'Next: the next step',
-].join('\n')
+// The per-model weekly windows. The engine hands mods only `five_hour` and `seven_day`, so these
+// come from a second engine process asked for its usage report: no model call, about a second.
+const plan = atom({ plugin: 'context-meter', key: 'plan' } as const, null)
+const PLAN_EVERY = 180_000
+const USAGE_REQUEST = `${JSON.stringify({ type: 'control_request', request_id: 'context-meter', request: { subtype: 'get_usage', skip_behaviors: true } })}\n`
+// The child runs no hooks and loads no mods, this one included.
+const CHILD_SETTINGS = JSON.stringify({ disableAllHooks: true, env: { CLAUDE_CODE_PLUGIN_DIRS: '', CLAUDE_CODE_PLUGIN_DIR_WATCH: '0' } })
 
-const ask = async ($: EngineInterface) => {
-  await update($, where, () => ({ status: 'asking', lines: [] }))
-  const reply = await $.model.fork({ prompt: WHERE_PROMPT })
-  const lines = reply.isAnswered
-    ? reply.text.split('\n').map(line => line.trim()).filter(line => line !== '').slice(0, 3)
-    : [`No summary: ${reply.reason}`]
-  await update($, where, () => ({ status: 'ready', lines }))
+const byVersion = (a: string, b: string) => {
+  const x = a.split('.').map(Number)
+  const y = b.split('.').map(Number)
+
+  return (x[0] ?? 0) - (y[0] ?? 0) || (x[1] ?? 0) - (y[1] ?? 0) || (x[2] ?? 0) - (y[2] ?? 0)
 }
+
+// The engine's own binary: named by the desktop app, else the newest one it has installed, else PATH.
+const engineOf = async ($: EngineInterface) => {
+  const named = await $.env.get('CLAUDE_CODE_EXECPATH')
+
+  if (named !== undefined && named !== '') {
+    return named
+  }
+
+  const root = `${(await $.env.get('HOME')) ?? ''}/Library/Application Support/Claude/claude-code`
+  const versions = (await $.fs.list(root).catch(() => [])).map(entry => entry.name).sort(byVersion).reverse()
+
+  for (const version of versions) {
+    for (const build of await $.fs.list(`${root}/${version}`).catch(() => [])) {
+      return `${root}/${version}/${build.name}/claude.app/Contents/MacOS/claude`
+    }
+  }
+
+  return 'claude'
+}
+
+const planIn = (stdout: string): { windows: Limit[]; scoped: Limit[] } | undefined => {
+  for (const line of stdout.split('\n')) {
+    if (!line.includes('"control_response"')) {
+      continue
+    }
+
+    try {
+      const limits = JSON.parse(line).response?.response?.rate_limits
+
+      if (limits === null || typeof limits !== 'object') {
+        return undefined
+      }
+
+      const scoped: Limit[] = []
+
+      for (const row of Array.isArray(limits.model_scoped) ? limits.model_scoped : []) {
+        if (typeof row?.display_name === 'string' && typeof row.utilization === 'number') {
+          scoped.push({ kind: row.display_name, percentUsed: row.utilization, ...(typeof row.resets_at === 'string' && { resetsAt: row.resets_at }) })
+        }
+      }
+
+      // The plan's own windows too: the engine leaves `seven_day` out of what it hands a mod in a
+      // session whose model has a window of its own.
+      const windows: Limit[] = []
+
+      for (const kind of ['five_hour', 'seven_day']) {
+        const row = limits[kind]
+
+        if (typeof row?.utilization === 'number') {
+          windows.push({ kind, percentUsed: row.utilization, ...(typeof row.resets_at === 'string' && { resetsAt: row.resets_at }) })
+        }
+      }
+
+      return { windows, scoped }
+    } catch {
+      return undefined
+    }
+  }
+
+  return undefined
+}
+
+// Asks at most once every few minutes; a failed ask keeps the last figures and waits its turn too.
+const refreshPlan = async ($: EngineInterface) => {
+  if ((await $.env.get('CONTEXT_METER_CHILD')) !== undefined) {
+    return
+  }
+
+  const held: Plan | null = await read($, plan)
+  const at = await $.clock.now()
+
+  if (held !== null && at - held.at < PLAN_EVERY) {
+    return
+  }
+
+  await update($, plan, () => ({ at, scoped: held?.scoped ?? [], windows: held?.windows ?? [] }))
+
+  const { stdout } = await $.process.run(
+    [await engineOf($), '-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--no-session-persistence', '--settings', CHILD_SETTINGS],
+    { stdin: USAGE_REQUEST, env: { CONTEXT_METER_CHILD: '1' }, timeoutMs: 20_000 },
+  )
+  const answer = planIn(stdout)
+
+  if (answer !== undefined) {
+    await update($, plan, () => ({ at, ...answer }))
+  }
+}
+
+const refreshPlanQuietly = ($: EngineInterface) => void refreshPlan($).catch(() => undefined)
 
 // Each session keeps its own file under the day's folder; a day's total is the sum of that folder.
 
@@ -95,7 +181,7 @@ const count = async ($: EngineInterface, usd: number | undefined) => {
   await $.fs.write(file, JSON.stringify({ start: entry.start, now: offset + usd, offset }))
 }
 
-const LIMIT_LABELS: Record<string, string> = { five_hour: '5h', seven_day: '7d', spend_limit: 'Spend' }
+const LIMIT_LABELS: Record<string, string> = { five_hour: '5h', seven_day: 'All', spend_limit: 'Spend' }
 
 const compact = (n: number) =>
   n >= 1_000_000 ? `${+(n / 1_000_000).toFixed(1)}M` : n >= 100_000 ? `${Math.round(n / 1000)}k` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`
@@ -113,9 +199,9 @@ const label = (kind: string) => {
   return `${window} ${model.charAt(0).toUpperCase()}${model.slice(1)}`.trim()
 }
 
-const hueOf = (kind: string) => (kind.startsWith('five_hour') ? 'blue' : kind.startsWith('seven_day') ? 'purple' : 'grey')
+const hueOf = (kind: string): keyof typeof HUES => (kind.startsWith('five_hour') ? 'blue' : kind.startsWith('seven_day') ? 'purple' : 'grey')
 
-const iconOf = (kind: string) => (kind.startsWith('five_hour') ? 'clock' : kind.startsWith('seven_day') ? 'calendar' : 'coin')
+const iconOf = (kind: string): keyof typeof ICONS => (kind.startsWith('five_hour') ? 'clock' : kind.startsWith('seven_day') ? 'calendar' : 'coin')
 
 const until = (resetsAt: string | undefined, now: number) => {
   const ms = resetsAt === undefined ? NaN : Date.parse(resetsAt) - now
@@ -209,7 +295,12 @@ const drawPills = (pills: Pill[]) => {
   }
 }
 
-const pillsOf = (now: Reading, at: number): Pill[] => [
+const pillsOf = (now: Reading, held: Plan | null, at: number): Pill[] => {
+  const scoped = held?.scoped ?? []
+  // The engine's figure where it gives one (it moves with each response), else the usage report's.
+  const limits = [...now.limits, ...(held?.windows ?? []).filter(w => !now.limits.some(l => l.kind === w.kind))]
+
+  return [
   {
     name: 'Context',
     icon: 'gauge',
@@ -217,7 +308,7 @@ const pillsOf = (now: Reading, at: number): Pill[] => [
     percent: now.percent ?? 0,
     detail: now.tokens === undefined ? 'no reading yet' : `${compact(now.tokens)} / ${compact(now.window)}`,
   },
-  ...now.limits.map((limit: Limit) => ({
+  ...limits.map((limit: Limit) => ({
     name: label(limit.kind),
     icon: iconOf(limit.kind),
     hue: hueOf(limit.kind),
@@ -226,29 +317,17 @@ const pillsOf = (now: Reading, at: number): Pill[] => [
     percent: limit.percentUsed,
     detail: until(limit.resetsAt, at),
   })),
+  // A model's own weekly window, named as the plan names it (Fable).
+  ...scoped.map((limit: Limit) => ({
+    name: limit.kind,
+    icon: 'calendar' as const,
+    hue: 'blue' as const,
+    hasBar: false,
+    percent: limit.percentUsed,
+    detail: until(limit.resetsAt, at),
+  })),
   ...(now.usd === undefined ? [] : [{ name: '', icon: 'coin' as const, hue: 'yellow' as const, detail: `$${now.usd.toFixed(2)}` }]),
-]
-
-// The summary's three parts, each drawn as a chip in the pills' style ahead of its line.
-const PARTS = [
-  { match: /^now\b/i, name: 'Now', hue: 'blue', icon: '<circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="1.4"/>' },
-  { match: /^waiting\b/i, name: 'Waiting on you', hue: 'orange', icon: '<path d="M4.5 2.5h7M4.5 13.5h7M5.2 2.5c0 3.2 5.6 3.4 5.6 5.5s-5.6 2.3-5.6 5.5M10.8 2.5c0 3.2-5.6 3.4-5.6 5.5s5.6 2.3 5.6 5.5"/>' },
-  { match: /^next\b/i, name: 'Next', hue: 'green', icon: '<path d="M3 8h9.5M9 4.5L12.5 8 9 11.5"/>' },
-] as const
-const CHIP_W = 150
-
-const drawChip = (name: string, hue: string, icon: string) =>
-  `<svg xmlns="http://www.w3.org/2000/svg" width="${CHIP_W}" height="${PILL_H}" viewBox="0 0 ${CHIP_W} ${PILL_H}" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12">` +
-  `<rect width="${CHIP_W}" height="${PILL_H}" rx="12" fill="${hue}" fill-opacity="0.13"/>` +
-  `<g transform="translate(12 4)" fill="none" stroke="${hue}" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">${icon}</g>` +
-  `<text x="34" y="16.5" fill="${hue}" font-weight="700">${name}</text></svg>`
-
-// Splits "Now: the work stands here" into its part and its text; an unlabelled line gets no chip.
-const partOf = (line: string) => {
-  const colon = line.indexOf(':')
-  const part = colon === -1 ? undefined : PARTS.find(p => p.match.test(line.slice(0, colon).trim()))
-
-  return part === undefined ? { text: line } : { part, text: line.slice(colon + 1).trim() }
+  ]
 }
 
 export const register: Register = on => {
@@ -260,13 +339,7 @@ export const register: Register = on => {
     await $.command.register({ name: 'spend', description: 'Show the cost of Claude Code sessions per day, last 14 days' })
     // The countdowns read the clock while drawing, so they need a redraw between turns.
     $.clock.every(20_000, () => $.ui.invalidate('ui.render'))
-
-    return next(e)
-  })
-
-  // A summary describes the turn it was asked in; the next prompt makes it stale.
-  on('prompt.submit', async ($, e, next) => {
-    await update($, where, () => IDLE)
+    refreshPlanQuietly($)
 
     return next(e)
   })
@@ -275,6 +348,7 @@ export const register: Register = on => {
     const latest: Reading = { ...e.context, limits: e.rateLimits, usd: e.cost?.usd }
     await update($, reading, () => latest)
     await count($, e.cost?.usd)
+    refreshPlanQuietly($)
 
     return next(e)
   })
@@ -297,40 +371,14 @@ export const register: Register = on => {
       return next(e)
     }
 
-    const pills = pillsOf(now, await $.clock.now())
+    const pills = pillsOf(now, await read($, plan), await $.clock.now())
 
     if (e.surface === 'desktop') {
-      const { Box, Button, Svg, Text } = $.ui.resolve(e)
-      const asked = (await read($, where)) ?? IDLE
+      const { Svg } = $.ui.resolve(e)
       const { source, width } = drawPills(pills)
       const alt = pills.map(p => [p.name || 'Cost', p.percent === undefined ? '' : `${Math.round(p.percent)}%`, p.detail ?? ''].join(' ')).join(', ')
 
-      return (
-        <Box flexDirection="column">
-          <Box alignItems="center" gap={1} flexWrap="wrap">
-            <Svg source={source} alt={alt} width={width} height={PILL_H} />
-            <Box flexShrink={0}>
-              {asked.status === 'ready' ? (
-                <Button key="hide" label="Hide" onPress={() => update($, where, () => IDLE)} />
-              ) : (
-                <Button key="where" label={asked.status === 'asking' ? 'Asking…' : 'Recap'} onPress={() => ask($)} />
-              )}
-            </Box>
-          </Box>
-          {asked.lines.map((line, i) => {
-            const { part, text } = partOf(line)
-
-            return (
-              <Box key={`where-${i}`} alignItems="center" gap={1} marginTop={1}>
-                {part !== undefined && (
-                  <Svg source={drawChip(part.name, HUES[part.hue], part.icon)} alt={part.name} width={CHIP_W} height={PILL_H} />
-                )}
-                <Text color={part === undefined ? undefined : HUES[part.hue]}>{text}</Text>
-              </Box>
-            )
-          })}
-        </Box>
-      )
+      return <Svg source={source} alt={alt} width={width} height={PILL_H} />
     }
 
     const { Box, Text } = $.ui.resolve(e)
